@@ -2,9 +2,171 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+import matplotlib.patches as patches
 import numpy as np
 from scipy.stats import norm, expon, binom, poisson, geom
 import math
+import re
+
+class MathTextWidget:
+    """Widget simplificado para mostrar texto con fórmulas matemáticas"""
+    
+    def __init__(self, parent, **kwargs):
+        self.parent = parent
+        self.bg_color = kwargs.get('bg', '#f8f8f8')
+        self.fg_color = kwargs.get('fg', '#37474f')
+        self.font_family = kwargs.get('font', ('Courier New', 10))
+        
+        # Crear un frame principal
+        self.frame = ttk.Frame(parent)
+        
+        # Crear un Text widget scrollable para mostrar todo el contenido
+        self.text_widget = scrolledtext.ScrolledText(
+            self.frame,
+            wrap=tk.WORD,
+            font=self.font_family,
+            bg=self.bg_color,
+            fg=self.fg_color,
+            relief=tk.FLAT,
+            state=tk.NORMAL
+        )
+        self.text_widget.pack(fill=tk.BOTH, expand=True)
+        
+        # Configurar tags para diferentes estilos
+        self.text_widget.tag_configure("formula", font=('Times New Roman', 12, 'italic'), foreground='#2E8B57')
+        self.text_widget.tag_configure("bold", font=('Courier New', 10, 'bold'))
+        self.text_widget.tag_configure("normal", font=self.font_family)
+        
+    def pack(self, **kwargs):
+        self.frame.pack(**kwargs)
+    
+    def grid(self, **kwargs):
+        self.frame.grid(**kwargs)
+        
+    def delete(self, start, end):
+        self.text_widget.delete(start, end)
+    
+    def insert(self, index, text):
+        """Insertar texto procesando las fórmulas matemáticas para mostrarlas de forma más legible"""
+        # Procesar el texto para mejorar la visualización de fórmulas
+        processed_text = self.process_math_text(text)
+        
+        # Insertar el texto procesado
+        lines = processed_text.split('\n')
+        for line in lines:
+            if '$' in line:
+                # Procesar línea con fórmulas
+                parts = self.split_formula_line(line)
+                for part, is_formula in parts:
+                    if is_formula:
+                        # Insertar la fórmula con estilo especial
+                        self.text_widget.insert(index, part, "formula")
+                    else:
+                        # Insertar texto normal
+                        self.text_widget.insert(index, part, "normal")
+                self.text_widget.insert(index, '\n', "normal")
+            else:
+                # Línea sin fórmulas
+                self.text_widget.insert(index, line + '\n', "normal")
+    
+    def split_formula_line(self, line):
+        """Dividir una línea en partes de texto normal y fórmulas"""
+        parts = []
+        current_pos = 0
+        
+        while current_pos < len(line):
+            # Buscar el siguiente $
+            dollar_pos = line.find('$', current_pos)
+            
+            if dollar_pos == -1:
+                # No hay más fórmulas, agregar el resto como texto normal
+                if current_pos < len(line):
+                    parts.append((line[current_pos:], False))
+                break
+            
+            # Agregar texto antes de la fórmula
+            if dollar_pos > current_pos:
+                parts.append((line[current_pos:dollar_pos], False))
+            
+            # Buscar el $ de cierre
+            end_dollar_pos = line.find('$', dollar_pos + 1)
+            if end_dollar_pos == -1:
+                # No hay $ de cierre, tratar como texto normal
+                parts.append((line[dollar_pos:], False))
+                break
+            
+            # Extraer y procesar la fórmula
+            formula = line[dollar_pos+1:end_dollar_pos]
+            processed_formula = self.format_formula(formula)
+            parts.append((processed_formula, True))
+            
+            current_pos = end_dollar_pos + 1
+        
+        return parts
+    
+    def format_formula(self, formula):
+        """Convertir LaTeX a una representación más legible"""
+        # Reemplazos para hacer las fórmulas más legibles
+        replacements = {
+            r'\\frac\{([^}]+)\}\{([^}]+)\}': r'(\1)/(\2)',
+            r'\\sqrt\{([^}]+)\}': r'√(\1)',
+            r'\\ln': 'ln',
+            r'\\log': 'log',
+            r'\\pi': 'π',
+            r'\\mu': 'μ',
+            r'\\sigma': 'σ',
+            r'\\lambda': 'λ',
+            r'\\alpha': 'α',
+            r'\\beta': 'β',
+            r'\\gamma': 'γ',
+            r'\\theta': 'θ',
+            r'\\leq': '≤',
+            r'\\geq': '≥',
+            r'\\le': '≤',
+            r'\\ge': '≥',
+            r'\\times': '×',
+            r'\\cdot': '·',
+            r'\\infty': '∞',
+            r'\\sum': 'Σ',
+            r'\\int': '∫',
+            r'\\lfloor': '⌊',
+            r'\\rfloor': '⌋',
+            r'\\lceil': '⌈',
+            r'\\rceil': '⌉',
+            r'\\bmod': ' mod ',
+            r'\\pmod\{([^}]+)\}': r' mod \1',
+            r'\\cos': 'cos',
+            r'\\sin': 'sin',
+            r'\\tan': 'tan',
+            r'\\exp': 'exp',
+            r'\\_': '_',
+            r'\\\\': '',
+            r'\\text\{([^}]+)\}': r'\1',
+            r'\\mathrm\{([^}]+)\}': r'\1'
+        }
+        
+        result = formula
+        for pattern, replacement in replacements.items():
+            if '(' in pattern:  # Es un patrón regex
+                result = re.sub(pattern, replacement, result)
+            else:  # Es un reemplazo simple
+                result = result.replace(pattern, replacement)
+        
+        # Limpiar espacios extra y formatear subíndices/superíndices
+        result = re.sub(r'\{([^}]+)\}', r'\1', result)  # Remover llaves restantes
+        result = re.sub(r'_([a-zA-Z0-9]+)', r'₍\1₎', result)  # Subíndices simples
+        result = re.sub(r'\^([a-zA-Z0-9]+)', r'^(\1)', result)  # Superíndices simples
+        
+        return result
+    
+    def process_math_text(self, text):
+        """Procesar todo el texto para mejorar la legibilidad"""
+        # Mejorar formato general
+        text = text.replace('---', '━━━')  # Líneas de separación más visibles
+        text = text.replace('===', '═══')  # Líneas de separación dobles
+        
+        return text
 
 class GeneradorPseudoaleatorio:
     def __init__(self, root):
@@ -218,7 +380,7 @@ class GeneradorPseudoaleatorio:
         proc_frame = ttk.Frame(table_proc_paned_window, style='TFrame')
         table_proc_paned_window.add(proc_frame, weight=1)
         ttk.Label(proc_frame, text="Procedimiento Paso a Paso", style='Subtitle.TLabel').pack(pady=(5, 5))
-        self.procedimiento_text = scrolledtext.ScrolledText(proc_frame, wrap=tk.WORD, font=("Courier New", 10), bg="#f8f8f8", fg=self.text_color, relief=tk.FLAT)
+        self.procedimiento_text = MathTextWidget(proc_frame, bg="#f8f8f8", fg=self.text_color, font=("Courier New", 10))
         self.procedimiento_text.pack(padx=5, pady=5, fill=tk.BOTH, expand=True)
 
         bottom_half_frame = ttk.Frame(uniform_paned_window, style='TFrame')
@@ -253,7 +415,7 @@ class GeneradorPseudoaleatorio:
         dist_proc_frame = ttk.Frame(dist_table_proc_paned_window, style='TFrame')
         dist_table_proc_paned_window.add(dist_proc_frame, weight=1)
         ttk.Label(dist_proc_frame, text="Procedimiento Paso a Paso", style='Subtitle.TLabel').pack(pady=(5, 5))
-        self.procedimiento_distribucion_text_widget = scrolledtext.ScrolledText(dist_proc_frame, wrap=tk.WORD, font=("Courier New", 10), bg="#f8f8f8", fg=self.text_color, relief=tk.FLAT)
+        self.procedimiento_distribucion_text_widget = MathTextWidget(dist_proc_frame, bg="#f8f8f8", fg=self.text_color, font=("Courier New", 10))
         self.procedimiento_distribucion_text_widget.pack(padx=5, pady=5, fill=tk.BOTH, expand=True)
 
         dist_bottom_half_frame = ttk.Frame(dist_paned_window, style='TFrame')
@@ -389,9 +551,10 @@ class GeneradorPseudoaleatorio:
 
         if metodo == "estandar":
             self.procedimiento_text.delete(1.0, tk.END)
-            self.procedimiento_text.insert(tk.END, "Generando números aleatorios utilizando np.random.rand()\n")
+            texto_procedimiento = "Generando números aleatorios utilizando np.random.rand()\n"
+            texto_procedimiento += f"Se generaron {actual_N_to_generate} números uniformes entre 0 y 1.\n"
+            self.procedimiento_text.insert(tk.END, texto_procedimiento)
             self.numeros_generados_uniformes = np.random.rand(actual_N_to_generate).tolist()
-            self.procedimiento_text.insert(tk.END, f"Se generaron {actual_N_to_generate} números uniformes entre 0 y 1.\n")
             self.valores_x_congruencial = ['N/A'] * actual_N_to_generate # Asignar 'N/A' para el método estándar
         else:
             x0_str = self.entries_uniform_params["Semilla (X₀)"].get()
@@ -412,33 +575,41 @@ class GeneradorPseudoaleatorio:
                 return False
 
             self.procedimiento_text.delete(1.0, tk.END)
-            self.procedimiento_text.insert(tk.END, f"Parámetros:\n")
-            self.procedimiento_text.insert(tk.END, f"  X₀ = {X0}\n  a = {a}\n  m = {m}\n")
+            
+            # Construir el texto del procedimiento
+            texto_procedimiento = f"Parámetros:\n"
+            texto_procedimiento += f"  X₀ = {X0}\n  a = {a}\n  m = {m}\n"
+            
             if metodo == "mixto":
-                self.procedimiento_text.insert(tk.END, f"  c = {c}\n")
-                self.procedimiento_text.insert(tk.END, "Método: Congruencial Mixto\n\n")
-                self.procedimiento_text.insert(tk.END, r"Fórmula: $X_{i+1} = (aX_i + c) \pmod{m}$" + "\n")
-                self.procedimiento_text.insert(tk.END, r"Fórmula: $R_i = \frac{X_i}{m}$" + "\n\n")
+                texto_procedimiento += f"  c = {c}\n"
+                texto_procedimiento += "Método: Congruencial Mixto\n\n"
+                texto_procedimiento += "Fórmula: $X_{{i+1}} = (a × X_i + c) \\bmod m$\n"
+                texto_procedimiento += "Fórmula: $R_i = X_i / m$\n\n"
             else:
-                self.procedimiento_text.insert(tk.END, "Método: Congruencial Multiplicativo (Lehmer)\n\n")
-                self.procedimiento_text.insert(tk.END, r"Fórmula: $X_{i+1} = (aX_i) \pmod{m}$" + "\n")
-                self.procedimiento_text.insert(tk.END, r"Fórmula: $R_i = \frac{X_i}{m}$" + "\n\n")
-            self.procedimiento_text.insert(tk.END, "Procedimiento de generación:\n")
+                texto_procedimiento += "Método: Congruencial Multiplicativo (Lehmer)\n\n"
+                texto_procedimiento += "Fórmula: $X_{{i+1}} = (a × X_i) \\bmod m$\n"
+                texto_procedimiento += "Fórmula: $R_i = X_i / m$\n\n"
+            
+            texto_procedimiento += "Procedimiento de generación:\n"
 
             xi = X0
             for i in range(actual_N_to_generate):
                 if metodo == "mixto":
                     xi_next = (a * xi + c) % m
-                    self.procedimiento_text.insert(tk.END, f"X_{i+1} = ({a} * {xi} + {c}) mod {m} = {xi_next}\n")
+                    texto_procedimiento += f"X_{{{i+1}}} = ({a} * {xi} + {c}) mod {m} = {xi_next}\n"
                 else:
                     xi_next = (a * xi) % m
-                    self.procedimiento_text.insert(tk.END, f"X_{i+1} = ({a} * {xi}) mod {m} = {xi_next}\n")
+                    texto_procedimiento += f"X_{{{i+1}}} = ({a} * {xi}) mod {m} = {xi_next}\n"
 
                 ri = xi_next / m
                 self.numeros_generados_uniformes.append(ri)
                 self.valores_x_congruencial.append(xi_next)
-                self.procedimiento_text.insert(tk.END, f"R_{i+1} = {xi_next} / {m} = {ri:.8f}\n\n")
+                texto_procedimiento += f"R_{{{i+1}}} = {xi_next} / {m} = {ri:.8f}\n\n"
                 xi = xi_next
+            
+            # Insertar todo el texto de una vez
+            self.procedimiento_text.insert(tk.END, texto_procedimiento)
+            
         self.actualizar_tablas_y_graficos_uniformes()
         return True
 
@@ -591,10 +762,10 @@ class GeneradorPseudoaleatorio:
         try:
             if distribucion == "Normal":
                 self.procedimiento_distribucion_texto += "Usando el Método de Box-Muller (Transformada Inversa):\n"
-                self.procedimiento_distribucion_texto += r"Fórmulas:" + "\n"
-                self.procedimiento_distribucion_texto += rf"  $Z_0 = \sqrt{{-2 \ln(U_1)}} \cos(2 \pi U_2)$" + "\n"
-                self.procedimiento_distribucion_texto += rf"  $Z_1 = \sqrt{{-2 \ln(U_1)}} \sin(2 \pi U_2)$" + "\n"
-                self.procedimiento_distribucion_texto += r"  $X = \mu + \sigma Z$" + "\n\n"
+                self.procedimiento_distribucion_texto += "Fórmulas:\n"
+                self.procedimiento_distribucion_texto += "  $Z_0 = \\sqrt{{-2 × \\ln(U_1)}} × \\cos(2π × U_2)$\n"
+                self.procedimiento_distribucion_texto += "  $Z_1 = \\sqrt{{-2 × \\ln(U_1)}} × \\sin(2π × U_2)$\n"
+                self.procedimiento_distribucion_texto += "  $X = μ + σ × Z$\n\n"
 
                 # Ensure we have an even number of uniforms for Box-Muller
                 num_pairs_to_generate = cantidad_uniformes_disponibles // 2
@@ -630,10 +801,10 @@ class GeneradorPseudoaleatorio:
                     self.numeros_generados_distribucion_data.append((u1, u2, x1))
 
                     self.procedimiento_distribucion_texto += f"Par de uniformes {i+1}: U1={u1:.4f}, U2={u2:.4f}\n"
-                    self.procedimiento_distribucion_texto += rf"  $Z_0 = \sqrt{{-2 \ln({u1:.4f})}} \cos(2 \pi {u2:.4f}) = {z0:.4f}$" + "\n"
-                    self.procedimiento_distribucion_texto += rf"  $Z_1 = \sqrt{{-2 \ln({u1:.4f})}} \sin(2 \pi {u2:.4f}) = {z1:.4f}$" + "\n"
-                    self.procedimiento_distribucion_texto += rf"  $X_0 = {params['loc']:.2f} + {params['scale']:.2f} \times {z0:.4f} = {x0:.4f}$" + "\n"
-                    self.procedimiento_distribucion_texto += rf"  $X_1 = {params['loc']:.2f} + {params['scale']:.2f} \times {z1:.4f} = {x1:.4f}$" + "\n\n"
+                    self.procedimiento_distribucion_texto += f"  $Z_0 = \\sqrt{{-2 × \\ln({u1:.4f})}} × \\cos(2π × {u2:.4f}) = {z0:.4f}$\n"
+                    self.procedimiento_distribucion_texto += f"  $Z_1 = \\sqrt{{-2 × \\ln({u1:.4f})}} × \\sin(2π × {u2:.4f}) = {z1:.4f}$\n"
+                    self.procedimiento_distribucion_texto += f"  $X_0 = {params['loc']:.2f} + {params['scale']:.2f} × {z0:.4f} = {x0:.4f}$\n"
+                    self.procedimiento_distribucion_texto += f"  $X_1 = {params['loc']:.2f} + {params['scale']:.2f} × {z1:.4f} = {x1:.4f}$\n\n"
                 
                 # Truncate to N_dist_samples if more values were generated (e.g., if N_dist_samples was odd)
                 if len(self.numeros_generados_distribucion_data) > N_dist_samples:
@@ -644,7 +815,7 @@ class GeneradorPseudoaleatorio:
             elif distribucion == "Exponencial":
                 lam = 1 / params['scale']
                 self.procedimiento_distribucion_texto += "Usando la Transformada Inversa:\n"
-                self.procedimiento_distribucion_texto += r"Fórmula: $X = - \frac{1}{\lambda} \ln(1 - U)$" + "\n\n"
+                self.procedimiento_distribucion_texto += "Fórmula: $X = -(1/λ) × \\ln(1 - U)$\n\n"
                 for i in range(N_dist_samples): # Generate N_dist_samples samples
                     if uniform_index >= cantidad_uniformes_disponibles:
                         self.procedimiento_distribucion_texto += "  No quedan números uniformes para completar la muestra. Deteniendo.\n"
@@ -654,15 +825,15 @@ class GeneradorPseudoaleatorio:
                     if u == 1: u = 0.999999 # Avoid log(0)
                     x_val = - (1/lam) * np.log(1 - u)
                     self.numeros_generados_distribucion_data.append((u, None, x_val)) # U1, U2 (None), X_val
-                    self.procedimiento_distribucion_texto += rf"R_{i+1}={u:.4f} -> $X_{i+1} = - \frac{{1}}{{ {lam:.2f} }} \ln(1 - {u:.4f}) = {x_val:.4f}$" + "\n"
+                    self.procedimiento_distribucion_texto += f"R_{{{i+1}}}={u:.4f} -> $X_{{{i+1}}} = -(1/{lam:.2f}) × \\ln(1 - {u:.4f}) = {x_val:.4f}$\n"
 
 
             elif distribucion == "Binomial":
                 n_trials_per_sample = params['n']
                 p_success = params['p']
                 self.procedimiento_distribucion_texto += f"Simulación de {N_dist_samples} muestras de Binomial(n={n_trials_per_sample}, p={p_success:.2f}).\n"
-                self.procedimiento_distribucion_texto += r"Cada muestra Binomial requiere $n$ números uniformes." + "\n"
-                self.procedimiento_distribucion_texto += "Se cuenta el número de 'éxitos' (U <= p) en cada conjunto de $n$ uniformes.\n\n"
+                self.procedimiento_distribucion_texto += f"Cada muestra Binomial requiere n = {n_trials_per_sample} números uniformes.\n"
+                self.procedimiento_distribucion_texto += f"Se cuenta el número de 'éxitos' (U ≤ p = {p_success:.2f}) en cada conjunto de n uniformes.\n\n"
                 
                 for i_sample in range(N_dist_samples):
                     successes = 0
@@ -681,9 +852,9 @@ class GeneradorPseudoaleatorio:
                         uniform_index += 1
                         if u_val <= p_success:
                             successes += 1
-                            self.procedimiento_distribucion_texto += f"  Ensayo {j+1}: U={u_val:.4f} $\le$ P={p_success:.2f} -> ÉXITO\n"
+                            self.procedimiento_distribucion_texto += f"  Ensayo {j+1}: U = {u_val:.4f} ≤ p = {p_success:.2f} → ÉXITO\n"
                         else:
-                            self.procedimiento_distribucion_texto += f"  Ensayo {j+1}: U={u_val:.4f} $>$ P={p_success:.2f} -> FRACASO\n"
+                            self.procedimiento_distribucion_texto += f"  Ensayo {j+1}: U = {u_val:.4f} > p = {p_success:.2f} → FRACASO\n"
                     
                     # Store the first uniform of the set used for this sample, and the generated value
                     display_ri1 = uniforms_for_this_sample[0] if uniforms_for_this_sample else float('nan')
@@ -700,9 +871,9 @@ class GeneradorPseudoaleatorio:
                 # Open new window for Poisson PMF/CDF table
                 self.mostrar_tabla_poisson_pmf_cdf(lam)
 
-                self.procedimiento_distribucion_texto += f"Simulación de {N_dist_samples} muestras de Poisson (λ={lam:.2f}) usando la Transformada Inversa.\n"
-                self.procedimiento_distribucion_texto += r"Se genera $X$ tal que $P(X < X_i) \le U < P(X \le X_i)$." + "\n\n"
-                self.procedimiento_distribucion_texto += "Valores de P(X=k) y P(X<=k) usados para la búsqueda:\n"
+                self.procedimiento_distribucion_texto += f"Simulación de {N_dist_samples} muestras de Poisson(λ = {lam:.2f}) usando la Transformada Inversa.\n"
+                self.procedimiento_distribucion_texto += "Se genera X tal que $P(X < X_i) \\leq U < P(X \\leq X_i)$.\n\n"
+                self.procedimiento_distribucion_texto += "Valores de P(X=k) y P(X ≤ k) usados para la búsqueda:\n"
 
                 # Calculate PMF and CDF for relevant k values
                 k_max = int(lam + 5 * np.sqrt(lam)) # Heuristic for max k
@@ -716,7 +887,7 @@ class GeneradorPseudoaleatorio:
                         break
                     u_val = self.numeros_generados_uniformes[uniform_index]
                     uniform_index += 1
-                    self.procedimiento_distribucion_texto += f"Muestra Poisson {i+1}: U={u_val:.4f}\n"
+                    self.procedimiento_distribucion_texto += f"Muestra Poisson {i+1}: U = {u_val:.4f}\n"
                     generated_x = -1
                     for k in range(k_max + 1):
                         if k == 0:
@@ -728,11 +899,11 @@ class GeneradorPseudoaleatorio:
                             P_X_less_k = cdf_values[k-1] # P(X < k) = P(X <= k-1)
                             P_X_le_k = cdf_values[k] # P(X <= k)
 
-                        self.procedimiento_distribucion_texto += f"  k={k}, P(X<{k})={P_X_less_k:.6f}, P(X<={k})={P_X_le_k:.6f}\n"
+                        self.procedimiento_distribucion_texto += f"  k={k}, P(X<{k})={P_X_less_k:.6f}, P(X≤{k})={P_X_le_k:.6f}\n"
 
                         if P_X_less_k <= u_val < P_X_le_k:
                             generated_x = k
-                            self.procedimiento_distribucion_texto += f"  Condición {P_X_less_k:.6f} <= {u_val:.4f} < {P_X_le_k:.6f} CUMPLIDA. Valor generado: {k}\n\n"
+                            self.procedimiento_distribucion_texto += f"  Condición {P_X_less_k:.6f} ≤ {u_val:.4f} < {P_X_le_k:.6f} CUMPLIDA. Valor generado: X = {k}\n\n"
                             break
                     if generated_x == -1:
                         # If U is very close to 1, it might exceed all pre-calculated k_max, assign last k_max
@@ -743,10 +914,10 @@ class GeneradorPseudoaleatorio:
 
             elif distribucion == "Geométrica":
                 p = params['p']
-                self.procedimiento_distribucion_texto += r"Usando la Transformada Inversa:" + "\n"
-                self.procedimiento_distribucion_texto += r"Fórmula: $X = \lfloor\frac{\ln(1-U)}{\ln(1-p)}\rfloor + 1$" + "\n"
+                self.procedimiento_distribucion_texto += "Usando la Transformada Inversa para la distribución Geométrica(p = {:.2f}):\n".format(p)
+                self.procedimiento_distribucion_texto += "Fórmula: $X = ⌊\\ln(1-U)/\\ln(1-p)⌋ + 1$\n"
                 ln_one_minus_p = np.log(1 - p)
-                self.procedimiento_distribucion_texto += rf"  $\ln(1-p) = \ln(1-{p:.2f}) = {ln_one_minus_p:.4f}$" + "\n\n"
+                self.procedimiento_distribucion_texto += f"ln(1-p) = ln(1-{p:.2f}) = {ln_one_minus_p:.4f}\n\n"
 
                 if (1-p) <= 0: # This also covers p=1.0 which makes ln(1-p) undefined
                     messagebox.showerror("Error", "La probabilidad (P) no puede ser 1 para la distribución Geométrica al usar la transformada inversa.")
@@ -763,7 +934,7 @@ class GeneradorPseudoaleatorio:
                     x_val_float = val_ln_1_minus_u / ln_one_minus_p
                     x_val = np.floor(x_val_float) + 1
                     self.numeros_generados_distribucion_data.append((u, None, int(x_val))) # Store U1, U2 (None), X_val
-                    self.procedimiento_distribucion_texto += rf"R_{i+1}={u:.4f} -> $X_{i+1} = \lfloor\frac{{\ln(1 - {u:.4f})}}{{\ln(1 - {p:.2f})}}\rfloor + 1 = \lfloor\frac{{{val_ln_1_minus_u:.4f}}}{{{ln_one_minus_p:.4f}}}\rfloor + 1 = {int(x_val)}$" + "\n"
+                    self.procedimiento_distribucion_texto += f"R_{{{i+1}}}={u:.4f} -> $X_{{{i+1}}} = ⌊\\ln(1 - {u:.4f})/\\ln(1 - {p:.2f})⌋ + 1 = ⌊{val_ln_1_minus_u:.4f}/{ln_one_minus_p:.4f}⌋ + 1 = {int(x_val)}$\n"
 
 
             # Extract only the generated X values for plotting and summary statistics
